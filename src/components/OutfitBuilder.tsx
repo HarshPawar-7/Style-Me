@@ -1,10 +1,11 @@
 import { useState, useMemo } from "react";
 import { Plus, X, Shirt, Sparkles, RotateCcw, DollarSign } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { PRODUCTS, type Product } from "@/lib/products";
+import { fetchProducts, type Product, type Gender } from "@/lib/products";
 import { filterByUndertone } from "@/lib/matching";
 import { colorDistance } from "@/lib/colorUtils";
 import ColorSwatch from "./ColorSwatch";
+import { useQuery } from "@tanstack/react-query";
 
 type SlotKey = "tops" | "bottoms" | "outerwear" | "dresses" | "shoes" | "accessories";
 
@@ -30,10 +31,21 @@ const OutfitBuilder = ({ palette, undertone }: OutfitBuilderProps) => {
   const [outfit, setOutfit] = useState<Outfit>({});
   const [activeSlot, setActiveSlot] = useState<SlotKey | null>(null);
   const [savedOutfits, setSavedOutfits] = useState<Outfit[]>([]);
+  const [genderPref, setGenderPref] = useState<Gender | "all">("all");
+
+  const { data: allProducts = [] } = useQuery({
+    queryKey: ["products"],
+    queryFn: fetchProducts,
+  });
 
   const availableProducts = useMemo(() => {
+    let pool = allProducts;
+    if (genderPref !== "all") {
+      pool = pool.filter(p => p.gender === genderPref || p.gender === "unisex");
+    }
+
     if (undertone) {
-      const filtered = filterByUndertone(undertone);
+      const filtered = filterByUndertone(pool, undertone);
       if (palette.length > 0) {
         return filtered.sort((a, b) => {
           const aDist = Math.min(...palette.map((c) => colorDistance(c, a.colorHex)));
@@ -43,8 +55,8 @@ const OutfitBuilder = ({ palette, undertone }: OutfitBuilderProps) => {
       }
       return filtered;
     }
-    return PRODUCTS;
-  }, [undertone, palette]);
+    return pool;
+  }, [undertone, palette, allProducts, genderPref]);
 
   const getProductsForSlot = (slot: SlotKey) =>
     availableProducts.filter((p) => p.category === slot);
@@ -80,21 +92,38 @@ const OutfitBuilder = ({ palette, undertone }: OutfitBuilderProps) => {
 
   return (
     <div className="mx-auto max-w-4xl space-y-6 animate-fade-in-up">
-      <div className="space-y-1">
-        <h2 className="text-2xl font-bold text-foreground">Outfit Builder</h2>
-        <p className="text-muted-foreground">
-          Combine pieces into complete looks that match your color palette.
-          {!undertone && (
-            <span className="block text-xs text-accent mt-1">
-              Tip: Analyze your colors first to see personalized suggestions!
-            </span>
-          )}
-          {undertone && (
-            <span className="block text-xs text-primary mt-1">
-              🎯 Showing pieces optimized for your <strong>{undertone}</strong> undertone
-            </span>
-          )}
-        </p>
+      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+        <div className="space-y-1">
+          <h2 className="text-2xl font-bold text-foreground">Outfit Builder</h2>
+          <p className="text-muted-foreground">
+            Combine pieces into complete looks that match your color palette.
+            {!undertone && (
+              <span className="block text-xs text-accent mt-1">
+                Tip: Analyze your colors first to see personalized suggestions!
+              </span>
+            )}
+            {undertone && (
+              <span className="block text-xs text-primary mt-1">
+                🎯 Showing pieces optimized for your <strong>{undertone}</strong> undertone
+              </span>
+            )}
+          </p>
+        </div>
+        
+        <div className="w-full md:w-48 shrink-0">
+          <select
+            value={genderPref}
+            onChange={(e) => {
+              setGenderPref(e.target.value as any);
+              clearOutfit(); // Clear outfit when switching gender context
+            }}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          >
+            <option value="all">Any Fit</option>
+            <option value="women">Women's Fit</option>
+            <option value="men">Men's Fit</option>
+          </select>
+        </div>
       </div>
 
       {/* Outfit slots */}

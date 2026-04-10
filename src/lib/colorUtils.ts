@@ -78,9 +78,19 @@ export function determineUndertone(
   g: number,
   b: number
 ): "Cool" | "Warm" | "Neutral" {
-  if (b > r && g > r) return "Cool";
-  if (r > b && r > g) return "Warm";
-  return "Neutral";
+  const [h] = rgbToHsl(r, g, b);
+  const hueDeg = h * 360;
+
+  // Skin tones mostly fall between 0° and 45°
+  // Lower degrees (more red/pink) mean cool tones
+  // Higher degrees (more yellow/golden) mean warm tones
+  if (hueDeg < 18 || hueDeg > 340) {
+    return "Cool";
+  } else if (hueDeg >= 18 && hueDeg < 26) {
+    return "Neutral";
+  } else {
+    return "Warm";
+  }
 }
 
 export function generatePalette(r: number, g: number, b: number): string[] {

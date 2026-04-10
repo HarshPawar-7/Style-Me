@@ -1,29 +1,31 @@
-import { Product, PRODUCTS } from "./products";
+import { Product } from "./products";
 import { colorDistance } from "./colorUtils";
 
 /**
  * Filter products whose color is close to any palette color.
  */
 export function filterByColor(
+  products: Product[],
   palette: string[],
   threshold = 150
 ): Product[] {
-  if (palette.length === 0) return PRODUCTS;
+  if (palette.length === 0) return products;
 
-  const matched = PRODUCTS.filter((p) => {
+  const matched = products.filter((p) => {
     return palette.some((ph) => colorDistance(ph, p.colorHex) < threshold);
   });
 
-  return matched.length > 0 ? matched : PRODUCTS;
+  return matched.length > 0 ? matched : products;
 }
 
 /**
  * Filter products by undertone compatibility.
  */
 export function filterByUndertone(
+  products: Product[],
   undertone: "Warm" | "Cool" | "Neutral"
 ): Product[] {
-  return PRODUCTS.filter((p) => p.undertones.includes(undertone));
+  return products.filter((p) => p.undertones.includes(undertone));
 }
 
 /**
@@ -55,40 +57,42 @@ export function searchProducts(
  * Get clothes that match a specific undertone and optionally a color palette.
  */
 export function getUndertoneRecommendations(
+  products: Product[],
   undertone: "Warm" | "Cool" | "Neutral",
   palette: string[] = [],
   topK = 6
 ): Product[] {
-  let products = filterByUndertone(undertone);
+  let filteredProducts = filterByUndertone(products, undertone);
 
   if (palette.length > 0) {
     // Boost items closer to palette colors
-    const scored = products.map((p) => {
+    const scored = filteredProducts.map((p) => {
       const minDist = Math.min(
         ...palette.map((ph) => colorDistance(ph, p.colorHex))
       );
       return { product: p, distance: minDist };
     });
     scored.sort((a, b) => a.distance - b.distance);
-    products = scored.map((s) => s.product);
+    filteredProducts = scored.map((s) => s.product);
   }
 
-  return products.slice(0, topK);
+  return filteredProducts.slice(0, topK);
 }
 
 /**
  * Combined: filter by color palette then rank by query.
  */
 export function recommend(
+  products: Product[],
   palette: string[],
   query: string,
   undertone?: "Warm" | "Cool" | "Neutral",
   topK = 5
 ): Product[] {
-  let pool = PRODUCTS;
+  let pool = products;
 
   if (undertone) {
-    pool = filterByUndertone(undertone);
+    pool = filterByUndertone(pool, undertone);
   }
 
   if (palette.length > 0) {

@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, ShoppingBag } from "lucide-react";
+import { Sparkles, ShoppingBag, Loader2 } from "lucide-react";
 import ImageUploader from "./ImageUploader";
 import ColorSwatch from "./ColorSwatch";
 import ProductCard from "./ProductCard";
@@ -10,7 +10,9 @@ import {
   generatePalette,
 } from "@/lib/colorUtils";
 import { getUndertoneRecommendations } from "@/lib/matching";
-import type { Product } from "@/lib/products";
+import { fetchProducts } from "@/lib/products";
+import { useQuery } from "@tanstack/react-query";
+import * as faceapi from "@vladmandic/face-api";
 
 interface AnalyzeColorsProps {
   onPaletteGenerated: (palette: string[], undertone: "Warm" | "Cool" | "Neutral") => void;
@@ -19,51 +21,103 @@ interface AnalyzeColorsProps {
 const AnalyzeColors = ({ onPaletteGenerated }: AnalyzeColorsProps) => {
   const [preview, setPreview] = useState<string | null>(null);
   const [imageData, setImageData] = useState<ImageData | null>(null);
+  const [isDetecting, setIsDetecting] = useState(false);
+  const [detectedGender, setDetectedGender] = useState<"men" | "women" | null>(null);
+  
   const [result, setResult] = useState<{
     hex: string;
     undertone: "Warm" | "Cool" | "Neutral";
     palette: string[];
   } | null>(null);
-  const [recommendations, setRecommendations] = useState<Product[]>([]);
+  
   const [error, setError] = useState<string | null>(null);
 
-  const handleAnalyze = () => {
-    if (!imageData) return;
+  // Load face-api models once
+  useEffect(() => {
+    const loadModels = async () => {
+      try {
+        const modelUrl = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js/weights';
+        await faceapi.nets.tinyFaceDetector.loadFromUri(modelUrl);
+        await faceapi.nets.ageGenderNet.loadFromUri(modelUrl);
+      } catch (err) {
+        console.error("Failed to load face-api models:", err);
+      }
+    };
+    loadModels();
+  }, []);
+
+  const { data: allProducts = [], isLoading: isLoadingProducts } = useQuery({
+    queryKey: ["products"],
+    queryFn: fetchProducts,
+  });
+
+  const handleAnalyze = async () => {
+    if (!imageData || !preview) return;
     setError(null);
+    setIsDetecting(true);
 
-    const skin = extractSkinTone(imageData);
-    if (!skin) {
-      setError(
-        "Could not detect skin tones. Please try a well-lit selfie with your face centered."
-      );
-      return;
+    try {
+      // 1. Detect Skin Tone
+      const skin = extractSkinTone(imageData);
+      if (!skin) {
+        setError("Could not detect skin tones. Please try a well-lit selfie with your face centered.");
+        setIsDetecting(false);
+        return;
+      }
+
+      // 2. Detect Gender using face-api
+      const imgEl = document.createElement("img");
+      imgEl.src = preview;
+      
+      // Wait for image to load to apply faceapi
+      await new Promise((resolve) => { imgEl.onload = resolve; });
+      
+      const detection = await faceapi.detectSingleFace(imgEl, new faceapi.TinyFaceDetectorOptions()).withAgeAndGender();
+      
+      let genderPref: "men" | "women" | null = null;
+      if (detection) {
+        genderPref = detection.gender === "male" ? "men" : "women";
+        setDetectedGender(genderPref);
+      }
+
+      // 3. Set Colors
+      const undertone = determineUndertone(skin.r, skin.g, skin.b);
+      const palette = generatePalette(skin.r, skin.g, skin.b);
+      setResult({ hex: skin.hex, undertone, palette });
+      onPaletteGenerated(palette, undertone);
+
+    } catch (err) {
+      console.error(err);
+      setError("An error occurred during analysis.");
+    } finally {
+      setIsDetecting(false);
     }
-
-    const undertone = determineUndertone(skin.r, skin.g, skin.b);
-    const palette = generatePalette(skin.r, skin.g, skin.b);
-    setResult({ hex: skin.hex, undertone, palette });
-    onPaletteGenerated(palette, undertone);
-
-    // Get recommended clothes for this undertone
-    const recs = getUndertoneRecommendations(undertone, palette, 6);
-    setRecommendations(recs);
   };
 
+  // Derive recommendations on the fly
+  let recommendations = [];
+  if (result && allProducts.length > 0) {
+    let pool = allProducts;
+    if (detectedGender) {
+      pool = pool.filter(p => p.gender === detectedGender); // Strict gender matching
+    }
+    recommendations = getUndertoneRecommendations(pool, result.undertone, result.palette, 18); // Increase products
+  }
+
   const undertoneDescriptions = {
-    Warm: "Earthy, golden, and warm hues like terracotta, olive, gold, beige, and coral flatter your skin beautifully.",
-    Cool: "Jewel tones, icy shades, and blue-based colors like navy, emerald, slate, and berry complement your complexion.",
-    Neutral: "You're versatile! Both warm and cool tones work — from soft pinks to muted blues, earth tones to pastels.",
+    Warm: "Earthy, golden, and warm hues flatter your skin beautifully.",
+    Cool: "Jewel tones, icy shades, and blue-based colors complement your complexion.",
+    Neutral: "You're versatile! Both warm and cool tones work nicely.",
   };
 
   return (
     <div className="mx-auto max-w-3xl space-y-6 animate-fade-in-up">
       <div className="space-y-1">
         <h2 className="text-2xl font-bold text-foreground">
-          Analyze My Colors
+          Analyze My Colors & Style
         </h2>
         <p className="text-muted-foreground">
-          Upload a clear, well-lit selfie with your face centered to discover
-          your undertone and personal color palette.
+          Upload a selfie. We'll use AI to identify your skin undertone and gender to fetch real matching apparel from our partner APIs.
         </p>
       </div>
 
@@ -74,24 +128,28 @@ const AnalyzeColors = ({ onPaletteGenerated }: AnalyzeColorsProps) => {
           setImageData(data);
           setPreview(prev);
           setResult(null);
-          setRecommendations([]);
+          setDetectedGender(null);
           setError(null);
         }}
       />
 
       <Button
         onClick={handleAnalyze}
-        disabled={!imageData}
+        disabled={!imageData || isDetecting || isLoadingProducts}
         className="w-full"
         size="lg"
       >
-        <Sparkles className="mr-2 h-4 w-4" />
-        Analyze My Skin Tone
+        {isDetecting || isLoadingProducts ? (
+          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+        ) : (
+          <Sparkles className="mr-2 h-4 w-4" />
+        )}
+        {isLoadingProducts ? "Loading Catalog..." : isDetecting ? "Running AI Models..." : "Analyze My Photo"}
       </Button>
 
       {error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-          ⚠️ {error}
+           {error}
         </div>
       )}
 
@@ -109,15 +167,19 @@ const AnalyzeColors = ({ onPaletteGenerated }: AnalyzeColorsProps) => {
                   Detected Skin Tone:{" "}
                   <span style={{ color: result.hex }}>{result.hex}</span>
                 </p>
-                <p className="text-muted-foreground">
-                  Undertone:{" "}
+                <div className="flex flex-wrap gap-2 mt-1">
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-3 py-0.5 text-sm font-semibold text-primary">
                     {result.undertone === "Warm" && "🌅"}
                     {result.undertone === "Cool" && "❄️"}
                     {result.undertone === "Neutral" && "⚖️"}
                     {result.undertone}
                   </span>
-                </p>
+                  {detectedGender && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-secondary px-3 py-0.5 text-sm font-semibold text-secondary-foreground">
+                       {detectedGender === "men" ? "Men's Fit" : "Women's Fit"}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -137,21 +199,24 @@ const AnalyzeColors = ({ onPaletteGenerated }: AnalyzeColorsProps) => {
               <div className="flex items-center gap-2">
                 <ShoppingBag className="h-5 w-5 text-primary" />
                 <h3 className="text-xl font-bold text-foreground">
-                  Clothes That Suit Your{" "}
-                  <span className="gradient-text">{result.undertone}</span>{" "}
-                  Tone
+                  Shop Your Match
                 </h3>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Based on your skin tone analysis, these modern pieces will
-                complement your natural coloring perfectly.
+              <p className="text-sm text-muted-foreground mt-[-8px]">
+                Showing real products fetched from <strong>FakeStore API</strong>.
               </p>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                 {recommendations.map((p, i) => (
-                  <ProductCard key={i} product={p} paletteColors={result.palette} />
+                  <ProductCard key={p.id} product={p} paletteColors={result.palette} />
                 ))}
               </div>
             </div>
+          )}
+          
+          {recommendations.length === 0 && (
+             <p className="text-sm text-muted-foreground italic mt-4">
+                 Sorry, we couldn't find any real products matching your criteria currently in stock.
+             </p>
           )}
         </>
       )}

@@ -7,7 +7,8 @@ import ColorSwatch from "./ColorSwatch";
 import ProductCard from "./ProductCard";
 import { extractDominantColors } from "@/lib/colorUtils";
 import { recommend } from "@/lib/matching";
-import type { Product } from "@/lib/products";
+import { fetchProducts, type Product, type Gender } from "@/lib/products";
+import { useQuery } from "@tanstack/react-query";
 
 interface FindStyleProps {
   palette: string[];
@@ -16,10 +17,16 @@ interface FindStyleProps {
 
 const FindStyle = ({ palette, undertone }: FindStyleProps) => {
   const [query, setQuery] = useState("");
+  const [genderPref, setGenderPref] = useState<Gender | "all">("all");
   const [inspoPreview, setInspoPreview] = useState<string | null>(null);
   const [inspoData, setInspoData] = useState<ImageData | null>(null);
   const [inspoPalette, setInspoPalette] = useState<string[]>([]);
   const [results, setResults] = useState<Product[]>([]);
+
+  const { data: allProducts = [] } = useQuery({
+    queryKey: ["products"],
+    queryFn: fetchProducts,
+  });
 
   const handleSearch = () => {
     let combined = [...palette];
@@ -28,7 +35,14 @@ const FindStyle = ({ palette, undertone }: FindStyleProps) => {
       setInspoPalette(extracted);
       combined = [...combined, ...extracted];
     }
-    const recs = recommend(combined, query, undertone, 6);
+    
+    // Predicate pool by gender
+    let pool = allProducts;
+    if (genderPref !== "all") {
+      pool = pool.filter(p => p.gender === genderPref || p.gender === "unisex");
+    }
+
+    const recs = recommend(pool, combined, query, undertone, 6);
     setResults(recs);
   };
 
@@ -53,16 +67,32 @@ const FindStyle = ({ palette, undertone }: FindStyleProps) => {
       </div>
 
       <div className="space-y-4">
-        <div>
-          <label className="mb-1.5 block text-sm font-medium text-foreground">
-            Style / Occasion
-          </label>
-          <Input
-            placeholder="e.g. Summer wedding guest, Casual brunch, Office chic"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-          />
+        <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex-1">
+            <label className="mb-1.5 block text-sm font-medium text-foreground">
+              Style / Occasion
+            </label>
+            <Input
+              placeholder="e.g. Summer wedding guest, Casual brunch, Office chic"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            />
+          </div>
+          <div className="w-full sm:w-48">
+            <label className="mb-1.5 block text-sm font-medium text-foreground">
+              Fit Preference
+            </label>
+            <select
+              value={genderPref}
+              onChange={(e) => setGenderPref(e.target.value as any)}
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            >
+              <option value="all">Any Fit</option>
+              <option value="women">Women's Fit</option>
+              <option value="men">Men's Fit</option>
+            </select>
+          </div>
         </div>
 
         <ImageUploader
