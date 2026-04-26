@@ -1,9 +1,11 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Sparkles, ShoppingBag, Loader2 } from "lucide-react";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { Sparkles, ShoppingBag, Loader2, Users } from "lucide-react";
 import ImageUploader from "./ImageUploader";
 import ColorSwatch from "./ColorSwatch";
 import ProductCard from "./ProductCard";
+import RecommendationDetails from "./RecommendationDetails";
 import {
   extractSkinTone,
   determineUndertone,
@@ -11,6 +13,7 @@ import {
 } from "@/lib/colorUtils";
 import { getUndertoneRecommendations } from "@/lib/matching";
 import { fetchProducts } from "@/lib/products";
+import { findRecommendation, StylingRecommendation } from "@/lib/recommendationEngine";
 import { useQuery } from "@tanstack/react-query";
 import * as faceapi from "@vladmandic/face-api";
 
@@ -23,6 +26,7 @@ const AnalyzeColors = ({ onPaletteGenerated }: AnalyzeColorsProps) => {
   const [imageData, setImageData] = useState<ImageData | null>(null);
   const [isDetecting, setIsDetecting] = useState(false);
   const [detectedGender, setDetectedGender] = useState<"men" | "women" | null>(null);
+  const [selectedGenderFilter, setSelectedGenderFilter] = useState<"all" | "men" | "women">("all");
   
   const [result, setResult] = useState<{
     hex: string;
@@ -30,6 +34,7 @@ const AnalyzeColors = ({ onPaletteGenerated }: AnalyzeColorsProps) => {
     palette: string[];
   } | null>(null);
   
+  const [stylingRecommendation, setStylingRecommendation] = useState<StylingRecommendation | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Load face-api models once
@@ -86,6 +91,21 @@ const AnalyzeColors = ({ onPaletteGenerated }: AnalyzeColorsProps) => {
       setResult({ hex: skin.hex, undertone, palette });
       onPaletteGenerated(palette, undertone);
 
+      // 4. Load Styling Recommendations
+      const recommendation = await findRecommendation(
+        undefined, // hairColor (not detected)
+        undefined, // eyeColor (not detected)
+        "Very Fair", // Default skin tone - in real scenario, map RGB to skin tone
+        undertone,
+        undefined, // torsoLength (not detected)
+        undefined  // bodyProportion (not detected)
+      );
+      
+      if (recommendation) {
+        setStylingRecommendation(recommendation);
+        console.log("✅ Styling recommendation loaded:", recommendation);
+      }
+
     } catch (err) {
       console.error(err);
       setError("An error occurred during analysis.");
@@ -98,10 +118,11 @@ const AnalyzeColors = ({ onPaletteGenerated }: AnalyzeColorsProps) => {
   let recommendations = [];
   if (result && allProducts.length > 0) {
     let pool = allProducts;
-    if (detectedGender) {
-      pool = pool.filter(p => p.gender === detectedGender); // Strict gender matching
+    // Filter by selected gender toggle
+    if (selectedGenderFilter !== "all") {
+      pool = pool.filter(p => p.gender === selectedGenderFilter || p.gender === "unisex");
     }
-    recommendations = getUndertoneRecommendations(pool, result.undertone, result.palette, 18); // Increase products
+    recommendations = getUndertoneRecommendations(pool, result.undertone, result.palette, 18);
   }
 
   const undertoneDescriptions = {
@@ -128,7 +149,9 @@ const AnalyzeColors = ({ onPaletteGenerated }: AnalyzeColorsProps) => {
           setImageData(data);
           setPreview(prev);
           setResult(null);
+          setStylingRecommendation(null);
           setDetectedGender(null);
+          setSelectedGenderFilter("all");
           setError(null);
         }}
       />
@@ -193,18 +216,49 @@ const AnalyzeColors = ({ onPaletteGenerated }: AnalyzeColorsProps) => {
             />
           </div>
 
+          {/* Styling Recommendations */}
+          {stylingRecommendation && (
+            <RecommendationDetails recommendation={stylingRecommendation} />
+          )}
+
           {/* Recommended Clothes */}
           {recommendations.length > 0 && (
             <div className="space-y-4 animate-fade-in-up" style={{ animationDelay: "0.2s" }}>
-              <div className="flex items-center gap-2">
-                <ShoppingBag className="h-5 w-5 text-primary" />
-                <h3 className="text-xl font-bold text-foreground">
-                  Shop Your Match
-                </h3>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-2">
+                  <ShoppingBag className="h-5 w-5 text-primary" />
+                  <h3 className="text-xl font-bold text-foreground">
+                    Shop Your Match
+                  </h3>
+                </div>
+                
+                <div className="flex items-center gap-3">
+                  <Users className="h-4 w-4 text-muted-foreground" />
+                  <ToggleGroup 
+                    type="single" 
+                    value={selectedGenderFilter}
+                    onValueChange={(value) => {
+                      if (value) setSelectedGenderFilter(value as "all" | "men" | "women");
+                    }}
+                    className="border border-border rounded-lg p-1 bg-muted/50"
+                  >
+                    <ToggleGroupItem value="all" aria-label="All" className="text-xs">
+                      All
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="women" aria-label="Women" className="text-xs">
+                      👩 Women
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="men" aria-label="Men" className="text-xs">
+                      👨 Men
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground mt-[-8px]">
-                Showing real products fetched from <strong>FakeStore API</strong>.
+
+              <p className="text-sm text-muted-foreground">
+                Showing real products from our catalog <span className="text-xs text-muted-foreground/70">(filtered by {selectedGenderFilter === "all" ? "all categories" : selectedGenderFilter})</span>
               </p>
+              
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                 {recommendations.map((p, i) => (
                   <ProductCard key={p.id} product={p} paletteColors={result.palette} />
