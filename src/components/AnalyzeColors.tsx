@@ -11,7 +11,7 @@ import {
   determineUndertone,
   generatePalette,
 } from "@/lib/colorUtils";
-import { getUndertoneRecommendations } from "@/lib/matching";
+import { getSmartColorRecommendations } from "@/lib/matching";
 import { fetchProducts } from "@/lib/products";
 import { findRecommendation, StylingRecommendation } from "@/lib/recommendationEngine";
 import { useQuery } from "@tanstack/react-query";
@@ -85,13 +85,18 @@ const AnalyzeColors = ({ onPaletteGenerated }: AnalyzeColorsProps) => {
         setDetectedGender(genderPref);
       }
 
-      // 3. Set Colors
+      // 3. Set Colors with undertone-based palette
       const undertone = determineUndertone(skin.r, skin.g, skin.b);
-      const palette = generatePalette(skin.r, skin.g, skin.b);
+      const palette = generatePalette(skin.r, skin.g, skin.b, undertone);
       setResult({ hex: skin.hex, undertone, palette });
       onPaletteGenerated(palette, undertone);
 
-      // 4. Load Styling Recommendations
+      // 4. Auto-apply gender filter based on detection
+      if (genderPref) {
+        setSelectedGenderFilter(genderPref);
+      }
+
+      // 5. Load Styling Recommendations
       const recommendation = await findRecommendation(
         undefined, // hairColor (not detected)
         undefined, // eyeColor (not detected)
@@ -114,15 +119,22 @@ const AnalyzeColors = ({ onPaletteGenerated }: AnalyzeColorsProps) => {
     }
   };
 
-  // Derive recommendations on the fly
+  // Derive recommendations on the fly - using smart color matching
   let recommendations = [];
-  if (result && allProducts.length > 0) {
-    let pool = allProducts;
-    // Filter by selected gender toggle
-    if (selectedGenderFilter !== "all") {
-      pool = pool.filter(p => p.gender === selectedGenderFilter || p.gender === "unisex");
-    }
-    recommendations = getUndertoneRecommendations(pool, result.undertone, result.palette, 18);
+  if (result && allProducts.length > 0 && detectedGender) {
+    // Use detected gender or selected filter (with fallback to detected)
+    const genderForFiltering = 
+      selectedGenderFilter !== "all" 
+        ? (selectedGenderFilter as "men" | "women") 
+        : detectedGender;
+    
+    recommendations = getSmartColorRecommendations(
+      allProducts,
+      result.undertone,
+      genderForFiltering,
+      result.palette,
+      18
+    );
   }
 
   const undertoneDescriptions = {
