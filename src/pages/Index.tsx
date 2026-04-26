@@ -86,7 +86,7 @@ const Index = () => {
 
       <footer className="mt-auto border-t border-border bg-card/30 backdrop-blur-sm py-6 text-center animate-fade-in-up">
         <p className="text-sm font-medium text-muted-foreground flex items-center justify-center gap-1.5">
-          made with love <Heart className="h-4 w-4 text-red-500 fill-red-500 animate-pulse" /> Harsh and Manav
+          made with love <Heart className="h-4 w-4 text-red-500 fill-red-500 animate-pulse" /> Manav
         </p>
       </footer>
     </div>
