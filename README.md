@@ -1,3 +1,3 @@
 # Welcome to your Chroma Style project
 
-TODO: Document your project here
+This is made for making your cloth choices better
