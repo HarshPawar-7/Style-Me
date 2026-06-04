@@ -49,10 +49,6 @@ even lets you assemble complete outfits — all running client‑side.
    (3 per palette color).
 5. **Build an Outfit** → Use the Outfit Builder to mix and match pieces. The
    app calculates total price and shows color harmony for the complete look.
-6. **Detailed Styling Advice** → Based on your hair color, eye color, and body
-   proportions (optional), the app pulls specific recommendations from a
-   comprehensive CSV database — including suggested fabrics, patterns, jewelry
-   metals, and even what to exaggerate or avoid.
 
 ## 🚀 Quick Start
 
